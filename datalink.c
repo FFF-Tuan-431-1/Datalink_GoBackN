@@ -46,7 +46,7 @@ void send_data_frame() {
 		bufferHead = (bufferHead + 1) % WINDOW_SIZE;
 	}
 	else {
-		for (i = ack_tobe_expected; i != bufferHead; i = (i + 1) % WINDOW_SIZE) {
+		for (int i = ack_tobe_expected; i != bufferHead; i = (i + 1) % WINDOW_SIZE) {
 			buffer[i].kind = FRAME_DATA;
 			stop_timer(i);
 		}
@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
 				
 				log_printf("RECV DATA %d %d\n", f.seq, *( short *)f.data);
 				if (f.seq == expected_frame) {
-					send_ack_frame(f.seq); send_ack_frame(f.seq);
+					send_ack_frame(f.seq); send_ack_frame(f.seq); send_ack_frame(f.seq); 
 					put_packet(f.data, len - 7);
 					expected_frame = (expected_frame + 1) % WINDOW_SIZE;
 				}
