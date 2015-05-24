@@ -30,7 +30,7 @@ static void put_frame(unsigned char *frame, int len) {
 }
 
 
-int send_data_frame() {
+void send_data_frame() {
 	/*if (ack_tobe_expected < frame_tobe_sent && bufferHead > frame_tobe_sent) return 0;
 	if (ack_tobe_expected > frame_tobe_sent && bufferHead < ack_tobe_expecackted) return 0;
 	if (buffer[bufferHead].kind != FRAME_DATA) return 0;*/
@@ -44,12 +44,7 @@ int send_data_frame() {
 
 		buffer[bufferHead].kind = -1;
 		bufferHead = (bufferHead + 1) % WINDOW_SIZE;
-		return 1;
-
 	}
-	else
-		return 0;
-	
 }
 
 void send_ack_frame(int seq) {
@@ -59,6 +54,7 @@ void send_ack_frame(int seq) {
 	s.ack = seq;
 	
 	log_printf("SEND ACK %d\n", seq);
+	start_timer(WINDOW_SIZE + seq, DATA_TIMER);
 	put_frame((unsigned char *)&s, 2);
 }
 
@@ -86,6 +82,7 @@ int main(int argc, char **argv) {
 	while (1) {
 		event = wait_for_event(&arg);
 
+		log_printf("A: %d, F: %d, B: %d\n", ack_tobe_expected, frame_tobe_sent, bufferHead);
 		switch (event) {
 		case PHYSICAL_LAYER_READY:
 			physical_ready = 1;
@@ -125,6 +122,7 @@ int main(int argc, char **argv) {
 
 			if (f.kind == FRAME_ACK) {
 				log_printf("RECV ACK %d\n", f.ack);
+				stop_timer(f.ack + WINDOW_SIZE);
 				if (f.ack == ack_tobe_expected) {
 					stop_timer(ack_tobe_expected);
 					ack_tobe_expected = (ack_tobe_expected + 1) % WINDOW_SIZE;
@@ -140,17 +138,17 @@ int main(int argc, char **argv) {
 
 			if (f.kind == FRAME_DATA) {
 				
-				log_printf("RECV DATA %d\n", f.seq);
+				log_printf("RECV DATA %d %d\n", f.seq, *( short *)f.data);
 				if (f.seq == expected_frame) {
 					send_ack_frame(f.seq);
 					put_packet(f.data, len - 7);
 					expected_frame = (expected_frame + 1) % WINDOW_SIZE;
 				}
-				else{
-					if ((f.seq == expected_frame - 1) || ((f.seq == WINDOW_SIZE - 1) && (expected_frame == 0))){
-						send_ack_frame(f.seq);
-					}
-				}
+				//else{
+				//	if ((f.seq == expected_frame - 1) || ((f.seq == WINDOW_SIZE - 1) && (expected_frame == 0))){
+				//		send_ack_frame(f.seq);
+				//	}
+				//}
 			}
 
 			if (f.kind == FRAME_NAK) {
@@ -168,11 +166,16 @@ int main(int argc, char **argv) {
 		case DATA_TIMEOUT:
 			dbg_event("---- DATA %d timeout\n", arg);
 
-			for (i = ack_tobe_expected; i != bufferHead; i = (i + 1) % WINDOW_SIZE) {
-				buffer[i].kind = FRAME_DATA;
-				stop_timer(i);
+			if (arg > WINDOW_SIZE) {
+				send_ack_frame(arg - WINDOW_SIZE);
 			}
-			bufferHead = ack_tobe_expected;
+			else {
+				for (i = ack_tobe_expected; i != bufferHead; i = (i + 1) % WINDOW_SIZE) {
+					buffer[i].kind = FRAME_DATA;
+					stop_timer(i);
+				}
+				bufferHead = ack_tobe_expected;
+			}
 			break;
 
 		default:
