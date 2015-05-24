@@ -45,6 +45,13 @@ void send_data_frame() {
 		buffer[bufferHead].kind = -1;
 		bufferHead = (bufferHead + 1) % WINDOW_SIZE;
 	}
+	else {
+		for (i = ack_tobe_expected; i != bufferHead; i = (i + 1) % WINDOW_SIZE) {
+			buffer[i].kind = FRAME_DATA;
+			stop_timer(i);
+		}
+		bufferHead = ack_tobe_expected;
+	}
 }
 
 void send_ack_frame(int seq) {
@@ -54,7 +61,6 @@ void send_ack_frame(int seq) {
 	s.ack = seq;
 	
 	log_printf("SEND ACK %d\n", seq);
-	start_timer(WINDOW_SIZE + seq, DATA_TIMER);
 	put_frame((unsigned char *)&s, 2);
 }
 
@@ -122,12 +128,13 @@ int main(int argc, char **argv) {
 
 			if (f.kind == FRAME_ACK) {
 				log_printf("RECV ACK %d\n", f.ack);
-				stop_timer(f.ack + WINDOW_SIZE);
 				if (f.ack == ack_tobe_expected) {
 					stop_timer(ack_tobe_expected);
 					ack_tobe_expected = (ack_tobe_expected + 1) % WINDOW_SIZE;
 				}
-				else {
+				else if (f.ack == ack_tobe_expected - 1) {
+					break;
+				} else {
 					for (i = ack_tobe_expected; i != bufferHead; i = (i + 1) % WINDOW_SIZE) {
 						buffer[i].kind = FRAME_DATA;
 						stop_timer(i);
@@ -140,15 +147,10 @@ int main(int argc, char **argv) {
 				
 				log_printf("RECV DATA %d %d\n", f.seq, *( short *)f.data);
 				if (f.seq == expected_frame) {
-					send_ack_frame(f.seq);
+					send_ack_frame(f.seq); send_ack_frame(f.seq);
 					put_packet(f.data, len - 7);
 					expected_frame = (expected_frame + 1) % WINDOW_SIZE;
 				}
-				//else{
-				//	if ((f.seq == expected_frame - 1) || ((f.seq == WINDOW_SIZE - 1) && (expected_frame == 0))){
-				//		send_ack_frame(f.seq);
-				//	}
-				//}
 			}
 
 			if (f.kind == FRAME_NAK) {
